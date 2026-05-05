@@ -1,13 +1,353 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atabat AI - تحليل الهوية البصرية للروايات العربية</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Cairo', 'Segoe UI', sans-serif; }
+        body { background: linear-gradient(135deg, #0f1a2f 0%, #1a2a4f 100%); min-height: 100vh; }
+        .gold-text { color: #e8d5a3; }
+        .literary-card { background: #0a1222; border: 1px solid #2a3a5a; border-radius: 16px; transition: all 0.3s; }
+        .literary-card:hover { border-color: #e8d5a3; }
+        .btn-gold { background: #e8d5a3; color: #0a1222; font-weight: bold; transition: all 0.3s; }
+        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(232,213,163,0.3); }
+        .btn-outline { background: transparent; border: 1px solid #e8d5a3; color: #e8d5a3; }
+        .btn-outline:hover { background: rgba(232,213,163,0.1); }
+        .loading-spinner { border: 3px solid #2a3a5a; border-top: 3px solid #e8d5a3; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        input, textarea { background: #1a2542; border: 1px solid #3a4a6a; color: #e8d5a3; }
+        input:focus, textarea:focus { outline: none; border-color: #e8d5a3; }
+    </style>
+</head>
+<body class="text-gray-200">
 
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="text-center mb-12">
+            <h1 class="text-5xl font-bold gold-text mb-2">Atabat AI</h1>
+            <p class="text-lg text-gray-400">تحويل الروايات العربية إلى هوية بصرية متكاملة</p>
+            <p class="text-sm text-gray-500 mt-2">نموذج غريماس · محرك الرموز · الهوية البصرية</p>
+        </div>
+
+        <!-- Navigation -->
+        <div class="flex justify-center gap-4 mb-8 flex-wrap">
+            <button id="uploadBtn" class="px-6 py-2 rounded-lg btn-outline transition">📤 رفع رواية</button>
+            <button id="dashboardBtn" class="px-6 py-2 rounded-lg btn-gold transition">📊 لوحة التحليل</button>
+            <button id="visualBtn" class="px-6 py-2 rounded-lg btn-outline transition">🎨 الهوية البصرية</button>
+        </div>
+
+        <!-- Upload Section -->
+        <div id="uploadSection" class="literary-card p-8">
+            <h2 class="text-2xl gold-text mb-6">📤 رفع الرواية</h2>
+            <div class="grid md:grid-cols-2 gap-8">
+                <div class="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center">
+                    <div class="text-5xl mb-4">📖</div>
+                    <h3 class="text-xl mb-4">رفع ملف</h3>
+                    <input type="file" id="pdfUpload" accept=".pdf,.txt" class="w-full text-sm">
+                    <p class="text-xs text-gray-500 mt-2">PDF أو TXT (حتى 10MB)</p>
+                </div>
+                <div>
+                    <h3 class="text-xl mb-4">📝 لصق النص مباشرة</h3>
+                    <textarea id="directText" rows="6" class="w-full p-3 rounded-lg" placeholder="الصق هنا نص الرواية..."></textarea>
+                    <button id="processTextBtn" class="mt-4 w-full py-2 btn-gold rounded-lg">🚀 تحليل النص</button>
+                </div>
+            </div>
+            <div class="mt-6 text-center">
+                <button id="loadExampleBtn" class="px-6 py-2 btn-outline rounded-lg transition">📚 تجربة الرواية النموذجية (المنشق)</button>
+            </div>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div id="dashboardSection" class="literary-card p-8 hidden">
+            <h2 class="text-2xl gold-text mb-6">📊 تحليل الرواية</h2>
+            <div id="dashboardContent"></div>
+        </div>
+
+        <!-- Visual Section -->
+        <div id="visualSection" class="literary-card p-8 hidden">
+            <h2 class="text-2xl gold-text mb-6">🎨 الهوية البصرية</h2>
+            <div id="visualContent"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-12 text-gray-500 text-sm">
+            <p>© 2026 Atabat AI - تحليل سيميولوجية غريماس للروايات العربية</p>
+        </div>
+    </div>
+
+    <script>
+        // Configure PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        
+        let currentAnalysis = null;
+        
+        // Example novel data
+        const exampleNovel = {
+            title: "المنشق",
+            author: "بدران عبد الحليم",
+            text: `كان وحيداً في زنزانته. الجدران تبتلعه بصمتها الثقيل. سبع سنوات من العزلة لم تكسر روحه، بل صقلتها كالسيف. خرج من السجن ليس حراً، بل ليجد نفسه في صراع جديد مع عالم يرفضه. المنشق لم يعد يثق بأحد، لا بالسلطة ولا بالثوار. دربه كان ممهداً بالخيانة. صديقه القديم خان قضيته، حبيبته تركته في أصعب لحظاته، حتى أفكاره أصبحت تشك في جدواها. لكن في أعماقه، كان هناك شيء يتوهج: الحقيقة. قراره كان صعباً: أن يكتب كل شيء. أن يفضح الجميع. أن يحرر الأجيال القادمة من كذب التاريخ. كان يعلم أن ثمن الحقيقة قد يكون حياته. لكنه اختار الطريق الوعر.`
+        };
+        
+        // تحليل النص باستخدام نموذج غريماس
+        function analyzeNovel(text, title) {
+            const lowerText = text.toLowerCase();
+            
+            // استخراج المواضيع
+            let themes = [];
+            const themeMap = {
+                "الصراع": ["صراع", "مواجهة", "نضال", "حرب", "قتال"],
+                "الخيانة": ["خان", "غدر", "خذلان", "غش", "كذب"],
+                "الحرية": ["حر", "حرية", "سجن", "قيد", "طلق", "سجين"],
+                "الحقيقة": ["حقيقة", "صدق", "كذب", "زيف", "واقع"],
+                "العزلة": ["وحيد", "عزلة", "منفى", "وحدة"],
+                "الأمل": ["أمل", "تفاؤل", "يأسي", "نور", "ضوء"]
+            };
+            
+            for (let [theme, keywords] of Object.entries(themeMap)) {
+                for (let keyword of keywords) {
+                    if (lowerText.includes(keyword)) {
+                        themes.push(theme);
+                        break;
+                    }
+                }
+            }
+            if (themes.length === 0) themes = ["الهوية", "التحول", "المقاومة"];
+            themes = [...new Set(themes)];
+            
+            // استخراج المشاعر
+            let emotions = [];
+            if (lowerText.includes("حزن") || lowerText.includes("بكاء")) emotions.push("حزن");
+            if (lowerText.includes("غضب") || lowerText.includes("ثورة")) emotions.push("غضب");
+            if (lowerText.includes("أمل") || lowerText.includes("ضوء")) emotions.push("أمل");
+            if (lowerText.includes("خوف")) emotions.push("خوف");
+            if (emotions.length === 0) emotions = ["جدية", "تأمل"];
+            
+            // نموذج غريماس
+            let subject = "";
+            if (lowerText.includes("المنشق")) subject = "المنشق";
+            else if (lowerText.includes("فهد")) subject = "فهد";
+            else subject = "بطل الرواية";
+            
+            const actants = {
+                subject: { name: subject, description: "الشخصية الرئيسية التي تسعى لتحقيق هدف" },
+                object: themes[0] + " (الهدف الأساسي للرواية)",
+                sender: "الظروف والقوى الدافعة (المجتمع، السلطة، الضمير)",
+                receiver: "القارئ / المجتمع / الأجيال القادمة",
+                helpers: ["الشخصيات المساندة", "الصدف السردية", "القيم الأخلاقية"],
+                opponents: ["الخصوم", "العقبات الاجتماعية", "الزمن", "الموت"]
+            };
+            
+            // لوحة الألوان
+            const colorPalette = {
+                primary: "#1a2a4f",
+                secondary: "#e8d5a3",
+                accent: themes.includes("الخيانة") ? "#8b2a2a" : "#c94f4f",
+                background: "#f5f0e8"
+            };
+            
+            // الرموز البصرية
+            let symbols = [];
+            if (themes.includes("الخيانة")) symbols.push("⚡ سلسلة مكسورة");
+            if (themes.includes("الحرية")) symbols.push("🕊️ طائر محلق / نافذة مفتوحة");
+            if (themes.includes("الصراع")) symbols.push("⚔️ سيفان متقاطعان");
+            if (themes.includes("الحقيقة")) symbols.push("💡 مصباح / شمس مشرقة");
+            if (themes.includes("العزلة")) symbols.push("🌑 ظل / صحراء قاحلة");
+            if (symbols.length === 0) symbols = ["📖 كتاب مفتوح", "✒️ قلم", "🌙 قمر"];
+            
+            return {
+                title: title,
+                themes: themes,
+                emotions: emotions,
+                characters: ["البطل/المنشق", "الخصم/المعيق", "الشخصية المساعدة"],
+                actants: actants,
+                colorPalette: colorPalette,
+                symbols: symbols,
+                coverConcept: `غلاف يجمع بين ${themes.slice(0,2).join(" و ")}، مع رموز ${symbols[0]} و ${symbols[1] || "رموز أدبية"}، بتصميم مستوحى من الجمالية الأدبية العربية المعاصرة.`
+            };
+        }
+        
+        // عرض لوحة التحليل
+        function renderDashboard(analysis) {
+            const html = `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-[#1a2542] p-4 rounded-lg">
+                        <h3 class="gold-text text-lg mb-3">🎯 المواضيع الرئيسية</h3>
+                        <div class="flex flex-wrap gap-2">
+                            ${analysis.themes.map(t => `<span class="bg-e8d5a3 text-navy px-3 py-1 rounded-full text-sm">${t}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div class="bg-[#1a2542] p-4 rounded-lg">
+                        <h3 class="gold-text text-lg mb-3">😊 المشاعر السائدة</h3>
+                        <div class="flex flex-wrap gap-2">
+                            ${analysis.emotions.map(e => `<span class="border border-e8d5a3 px-3 py-1 rounded-full text-sm">${e}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div class="bg-[#1a2542] p-4 rounded-lg">
+                        <h3 class="gold-text text-lg mb-3">👥 الشخصيات الرئيسية</h3>
+                        <ul class="space-y-1">
+                            ${analysis.characters.map(c => `<li>• ${c}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="bg-[#1a2542] p-4 rounded-lg">
+                        <h3 class="gold-text text-lg mb-3">🎭 نموذج غريماس (الأكتانت)</h3>
+                        <ul class="space-y-1 text-sm">
+                            <li><strong class="gold-text">الذات (Subject):</strong> ${analysis.actants.subject.name}</li>
+                            <li><strong class="gold-text">الغاية (Object):</strong> ${analysis.actants.object}</li>
+                            <li><strong class="gold-text">المرسل (Sender):</strong> ${analysis.actants.sender}</li>
+                            <li><strong class="gold-text">المتلقي (Receiver):</strong> ${analysis.actants.receiver}</li>
+                            <li><strong class="gold-text">المساعدون:</strong> ${analysis.actants.helpers.join(', ')}</li>
+                            <li><strong class="gold-text">الخصوم:</strong> ${analysis.actants.opponents.join(', ')}</li>
+                        </ul>
+                    </div>
+                    <div class="bg-[#1a2542] p-4 rounded-lg md:col-span-2">
+                        <h3 class="gold-text text-lg mb-3">📖 الخلاصة السردية</h3>
+                        <p>${analysis.coverConcept}</p>
+                    </div>
+                </div>
+            `;
+            document.getElementById('dashboardContent').innerHTML = html;
+        }
+        
+        // عرض الهوية البصرية
+        function renderVisual(analysis) {
+            const html = `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-[#1a2542] p-4 rounded-lg">
+                        <h3 class="gold-text text-lg mb-3">🎨 لوحة الألوان</h3>
+                        <div class="flex gap-3 flex-wrap">
+                            ${Object.entries(analysis.colorPalette).map(([name, color]) => `
+                                <div class="text-center">
+                                    <div class="w-16 h-16 rounded-lg" style="background: ${color}"></div>
+                                    <span class="text-xs mt-1 block">${name}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div class="bg-[#1a2542] p-4 rounded-lg">
+                        <h3 class="gold-text text-lg mb-3">✨ الرموز البصرية</h3>
+                        <ul class="space-y-2">
+                            ${analysis.symbols.map(s => `<li>🔹 ${s}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="bg-[#1a2542] p-4 rounded-lg md:col-span-2">
+                        <h3 class="gold-text text-lg mb-3">📖 تصميم غلاف الكتاب</h3>
+                        <div class="p-6 rounded-lg text-center" style="background: ${analysis.colorPalette.primary}; color: ${analysis.colorPalette.secondary}">
+                            <div class="text-6xl mb-4">📚</div>
+                            <p class="text-xl font-bold">${analysis.title || "الرواية"}</p>
+                            <p class="mt-4">${analysis.coverConcept}</p>
+                            <div class="mt-4 flex justify-center gap-3">
+                                ${analysis.symbols.slice(0, 3).map(s => `<span class="text-2xl">${s.split(' ')[0]}</span>`).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('visualContent').innerHTML = html;
+        }
+        
+        function showLoading(section) {
+            if (section === 'dashboard') {
+                document.getElementById('dashboardContent').innerHTML = '<div class="text-center py-12"><div class="loading-spinner mx-auto"></div><p class="mt-4">جاري تحليل الرواية...</p></div>';
+            } else if (section === 'visual') {
+                document.getElementById('visualContent').innerHTML = '<div class="text-center py-12"><div class="loading-spinner mx-auto"></div><p class="mt-4">جاري توليد الهوية البصرية...</p></div>';
+            }
+        }
+        
+        async function processText(text, title) {
+            showLoading('dashboard');
+            showLoading('visual');
+            
+            await new Promise(resolve => setTimeout(resolve, 800));
+            
+            currentAnalysis = analyzeNovel(text, title);
+            
+            renderDashboard(currentAnalysis);
+            renderVisual(currentAnalysis);
+            
+            document.getElementById('dashboardSection').classList.remove('hidden');
+            document.getElementById('visualSection').classList.remove('hidden');
+            document.getElementById('uploadSection').classList.add('hidden');
+        }
+        
+        // Extract text from PDF
+        async function extractTextFromPDF(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(" ");
+                fullText += pageText + "\n";
+            }
+            return fullText;
+        }
+        
+        // Event Listeners
+        document.getElementById('processTextBtn').addEventListener('click', async () => {
+            const text = document.getElementById('directText').value;
+            if (!text.trim()) {
+                alert('الرجاء إدخال نص الرواية');
+                return;
+            }
+            await processText(text, "الرواية المرفوعة");
+        });
+        
+        document.getElementById('loadExampleBtn').addEventListener('click', async () => {
+            await processText(exampleNovel.text, exampleNovel.title);
+        });
+        
+        document.getElementById('pdfUpload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            try {
+                let text = "";
+                if (file.type === 'application/pdf') {
+                    text = await extractTextFromPDF(file);
+                } else {
+                    text = await file.text();
+                }
+                await processText(text, file.name.replace(/\.[^/.]+$/, ""));
+            } catch (error) {
+                alert('خطأ في قراءة الملف: ' + error.message);
+            }
+        });
+        
+        document.getElementById('uploadBtn').addEventListener('click', () => {
+            document.getElementById('uploadSection').classList.remove('hidden');
+            document.getElementById('dashboardSection').classList.add('hidden');
+            document.getElementById('visualSection').classList.add('hidden');
+        });
+        
+        document.getElementById('dashboardBtn').addEventListener('click', () => {
+            if (currentAnalysis) {
+                document.getElementById('uploadSection').classList.add('hidden');
+                document.getElementById('dashboardSection').classList.remove('hidden');
+                document.getElementById('visualSection').classList.add('hidden');
+            } else {
+                alert('الرجاء تحليل رواية أولاً');
+            }
+        });
+        
+        document.getElementById('visualBtn').addEventListener('click', () => {
+            if (currentAnalysis) {
+                document.getElementById('uploadSection').classList.add('hidden');
+                document.getElementById('dashboardSection').classList.add('hidden');
+                document.getElementById('visualSection').classList.remove('hidden');
+            } else {
+                alert('الرجاء تحليل رواية أولاً');
+            }
+        });
+        
+        // Load example on startup
+        setTimeout(() => {
+            processText(exampleNovel.text, exampleNovel.title);
+        }, 300);
+    </script>
+</body>
+</html>
